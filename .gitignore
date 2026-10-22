@@ -1,0 +1,15 @@
+# ESP-IDF build outputs & temp files
+build/
+sdkconfig
+sdkconfig.bak
+sdkconfig.old
+sdkconfig.ci
+
+# Toolchain & IDE settings
+.cache/
+.clangd/
+.vscode/
+
+# System / OS files
+.DS_Store
+Thumbs.db
