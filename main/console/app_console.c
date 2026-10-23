@@ -360,6 +360,53 @@ static int app_console_CmdVndSend(int argc, char **argv)
     int32_t ret = app_mesh_SendVendorRaw((uint16_t)ulDst, (uint8_t)ulOp, au8Data, u16Len);
     return (ret == ERROR_CODE_OK) ? 0 : 1;
 }
+
+static int app_console_CmdLevel(int argc, char **argv)
+{
+    if (argc < 3) {
+        printf("\nCu phap: level <get|set> <addr_hex> [val_s16] [ack=0|1]\n");
+        printf("Vi du  : level get 0x0047\n");
+        printf("         level set 0x0047 1000 1\n\n");
+        return 1;
+    }
+
+    uint16_t addr = (uint16_t)strtoul(argv[2], NULL, 0);
+
+    if (strcmp(argv[1], "get") == 0) {
+        return (app_mesh_SendGenericLevelGet(addr) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        if (argc < 4) return 1;
+        int16_t val = (int16_t)atoi(argv[3]);
+        bool bAck = (argc >= 5) ? (atoi(argv[4]) != 0) : true;
+        return (app_mesh_SendGenericLevelSet(addr, val, bAck) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    return 1;
+}
+
+static int app_console_CmdLightness(int argc, char **argv)
+{
+    if (argc < 3) {
+        printf("\nCu phap: lightness <get|set> <addr_hex> [val_u16] [ack=0|1]\n");
+        printf("Vi du  : lightness get 0x0043\n");
+        printf("         lightness set 0x0043 25000 1\n\n");
+        return 1;
+    }
+
+    uint16_t addr = (uint16_t)strtoul(argv[2], NULL, 0);
+
+    if (strcmp(argv[1], "get") == 0) {
+        return (app_mesh_SendLightnessGet(addr) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        if (argc < 4) return 1;
+        uint16_t val = (uint16_t)atoi(argv[3]);
+        bool bAck = (argc >= 5) ? (atoi(argv[4]) != 0) : true;
+        return (app_mesh_SendLightnessSet(addr, val, bAck) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    return 1;
+}
+
 /* ================== ĐĂNG KÝ DANH SÁCH LỆNH ================== */
 
 static void app_console_RegisterCommands(void)
@@ -479,6 +526,23 @@ static void app_console_RegisterCommands(void)
         .func    = &app_console_CmdHealth,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdHealth));
+
+    const esp_console_cmd_t stCmdLevel = {
+        .command = "level",
+        .help    = "Generic Level: level <get|set> <addr_hex> [val] [ack]",
+        .hint    = NULL,
+        .func    = &app_console_CmdLevel,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdLevel));
+
+    const esp_console_cmd_t stCmdLightness = {
+        .command = "lightness",
+        .help    = "Light Lightness Client: lightness <get|set> <addr_hex> [val] [ack]",
+        .hint    = NULL,
+        .func    = &app_console_CmdLightness,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdLightness));
+
 }
 
 /* ================== KHỞI TẠO CONSOLE REPL ================== */
@@ -518,3 +582,4 @@ void app_console_Init(void)
 
     ESP_ERROR_CHECK(esp_console_start_repl(pRepl));
 }
+

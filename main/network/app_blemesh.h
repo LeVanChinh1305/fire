@@ -80,3 +80,22 @@ int32_t app_mesh_HealthAttentionSet(uint16_t u16Dst, uint8_t u8Attention);
 
 /** @brief Gui Health Attention Get */
 int32_t app_mesh_HealthAttentionGet(uint16_t u16Dst);
+
+
+/* ================== GENERIC LEVEL CLIENT APIs ================== */
+/**
+ * @brief Gửi lệnh Generic Level Set tới Node
+ * @param u16Dst Địa chỉ Unicast/Group đích
+ * @param s16Level Giá trị level (-32768..32767)
+ * @param bAck true: Có phản hồi, false: Unacknowledged
+ */
+int32_t app_mesh_SendGenericLevelSet(uint16_t u16Dst, int16_t s16Level, bool bAck);
+
+/**
+ * @brief Gửi lệnh Generic Level Get để truy vấn trạng thái Level hiện tại
+ * @param u16Dst Địa chỉ Unicast/Group đích
+ */
+int32_t app_mesh_SendGenericLevelGet(uint16_t u16Dst);
+
+int32_t app_mesh_SendLightnessGet(uint16_t u16Dst);
+int32_t app_mesh_SendLightnessSet(uint16_t u16Dst, uint16_t u16Lightness, bool bAck);
