@@ -99,3 +99,13 @@ int32_t app_mesh_SendGenericLevelGet(uint16_t u16Dst);
 
 int32_t app_mesh_SendLightnessGet(uint16_t u16Dst);
 int32_t app_mesh_SendLightnessSet(uint16_t u16Dst, uint16_t u16Lightness, bool bAck);
+
+
+int32_t app_mesh_SendOnOffGet(uint16_t u16Dst);
+int32_t app_mesh_SendOnOffSet(uint16_t u16Dst, uint8_t u8OnOff, bool bAck);
+
+/* ===== Light CTL Client APIs ===== */
+int32_t app_mesh_SendCtlGet(uint16_t u16Dst);
+int32_t app_mesh_SendCtlSet(uint16_t u16Dst, uint16_t lightness, uint16_t temperature, int16_t delta_uv, bool bAck);
+int32_t app_mesh_SendCtlTempGet(uint16_t u16Dst);
+int32_t app_mesh_SendCtlTempSet(uint16_t u16Dst, uint16_t temperature, int16_t delta_uv, bool bAck);

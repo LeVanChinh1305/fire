@@ -179,6 +179,7 @@ static esp_ble_mesh_client_t g_stOnoffCli;
 static esp_ble_mesh_client_t g_stHealthCli;
 static esp_ble_mesh_client_t g_stLevelCli;
 static esp_ble_mesh_client_t g_stLightnessCli;
+static esp_ble_mesh_client_t g_stCtlCli;
 
 static esp_ble_mesh_model_t g_astRootModels[] = {
     ESP_BLE_MESH_MODEL_CFG_SRV(&g_stCfgSrv),
@@ -188,6 +189,7 @@ static esp_ble_mesh_model_t g_astRootModels[] = {
     ESP_BLE_MESH_MODEL_HEALTH_CLI(&g_stHealthCli),
     ESP_BLE_MESH_MODEL_GEN_LEVEL_CLI(&g_stOnoffPub, &g_stLevelCli),
     ESP_BLE_MESH_MODEL_LIGHT_LIGHTNESS_CLI(&g_stOnoffPub, &g_stLightnessCli),
+    ESP_BLE_MESH_MODEL_LIGHT_CTL_CLI(&g_stOnoffPub, &g_stCtlCli),
 };
 
 ESP_BLE_MESH_MODEL_PUB_DEFINE(g_stVndSrvPub, 3 + sizeof(st_vendor_custom_data_t), ROLE_NODE);
@@ -360,6 +362,57 @@ static void app_mesh_LightingCliCb(esp_ble_mesh_light_client_cb_event_t eEvent,
             }
             printf("--------------------------------------------------\n\n");
         }
+        /* ====================== LIGHT CTL STATUS ====================== */
+        if (u32Opcode == ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_STATUS ||
+            u32Opcode == 0x8260) {   // LIGHT_CTL_STATUS
+            uint16_t present_lightness   = pstParam->status_cb.ctl_status.present_ctl_lightness;
+            uint16_t present_temperature = pstParam->status_cb.ctl_status.present_ctl_temperature;
+            bool     has_target          = pstParam->status_cb.ctl_status.op_en;
+
+            printf("\n--------------------------------------------------\n");
+            printf("       [BLE MESH LIGHT CTL STATUS]                \n");
+            printf("--------------------------------------------------\n");
+            printf("  Event Type      : %s (%d)\n",
+                (eEvent == ESP_BLE_MESH_LIGHT_CLIENT_GET_STATE_EVT) ? "GET_RESPONSE" :
+                (eEvent == ESP_BLE_MESH_LIGHT_CLIENT_SET_STATE_EVT) ? "SET_RESPONSE" : "PUBLISH", eEvent);
+            printf("  Opcode          : 0x%04lX\n", (unsigned long)u32Opcode);
+            printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
+            printf("  Dia chi Dich    : 0x%04X\n", u16Dst);
+            printf("  RSSI / TTL      : %d dBm / %u\n", s8Rssi, u8Ttl);
+            printf("  ----------------------------------------------\n");
+            printf("  Present Lightness   : %u\n", present_lightness);
+            printf("  Present Temperature : %u (0x%04X)\n", present_temperature, present_temperature);
+
+            if (has_target) {
+                printf("  Target Lightness    : %u\n", pstParam->status_cb.ctl_status.target_ctl_lightness);
+                printf("  Target Temperature  : %u\n", pstParam->status_cb.ctl_status.target_ctl_temperature);
+                printf("  Remain Time         : %u\n", pstParam->status_cb.ctl_status.remain_time);
+            }
+            printf("--------------------------------------------------\n\n");
+        }
+
+        /* ====================== LIGHT CTL TEMPERATURE STATUS ====================== */
+        else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_STATUS ||
+                u32Opcode == 0x8266) {
+            uint16_t present_temp = pstParam->status_cb.ctl_temperature_status.present_ctl_temperature;
+            uint16_t present_delta = pstParam->status_cb.ctl_temperature_status.present_ctl_delta_uv;
+            bool     has_target   = pstParam->status_cb.ctl_temperature_status.op_en;
+
+            printf("\n--------------------------------------------------\n");
+            printf("   [BLE MESH LIGHT CTL TEMPERATURE STATUS]        \n");
+            printf("--------------------------------------------------\n");
+            printf("  Event Type      : %s\n",
+                (eEvent == ESP_BLE_MESH_LIGHT_CLIENT_PUBLISH_EVT) ? "PUBLISH" : "RESPONSE");
+            printf("  Opcode          : 0x%04lX\n", (unsigned long)u32Opcode);
+            printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
+            printf("  Present Temp    : %u\n", present_temp);
+            printf("  Present Delta UV: %d\n", (int16_t)present_delta);
+            if (has_target) {
+                printf("  Target Temp     : %u\n", pstParam->status_cb.ctl_temperature_status.target_ctl_temperature);
+                printf("  Target Delta UV : %d\n", (int16_t)pstParam->status_cb.ctl_temperature_status.target_ctl_delta_uv);
+            }
+            printf("--------------------------------------------------\n\n");
+        }
         break;
     }
     default:
@@ -481,10 +534,12 @@ static void app_mesh_GenericSrvCb(esp_ble_mesh_generic_server_cb_event_t eEvent,
 }
 
 /* DUY NHẤT 1 HÀM GENERIC CLIENT CALLBACK */
-static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent, 
+static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent,
                                   esp_ble_mesh_generic_client_cb_param_t *pstParam)
 {
-    if (pstParam == NULL || pstParam->params == NULL) return;
+    if (pstParam == NULL || pstParam->params == NULL) {
+        return;
+    }
 
     uint16_t u16Src    = pstParam->params->ctx.addr;
     uint16_t u16Dst    = pstParam->params->ctx.recv_dst;
@@ -495,7 +550,7 @@ static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent,
     uint32_t u32Opcode = pstParam->params->opcode;
 
     if (pstParam->error_code != ESP_OK) {
-        LREP_WARNING(TAG, "[GEN CLI ERROR] Tu 0x%04X | Event=%d | Opcode=0x%04lX | ErrCode=%d", 
+        LREP_WARNING(TAG, "[GENERIC CLI ERROR] Tu 0x%04X | Event=%d | Opcode=0x%04lX | ErrCode=%d",
                      u16Src, eEvent, (unsigned long)u32Opcode, pstParam->error_code);
         return;
     }
@@ -503,51 +558,69 @@ static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent,
     switch (eEvent) {
     case ESP_BLE_MESH_GENERIC_CLIENT_GET_STATE_EVT:
     case ESP_BLE_MESH_GENERIC_CLIENT_SET_STATE_EVT:
-    case ESP_BLE_MESH_GENERIC_CLIENT_PUBLISH_EVT: {
-
-        /* 1. Xử lý Generic Level Status (Bắt cả 0x8205 và 0x8208) */
-        if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_LEVEL_STATUS || u32Opcode == 0x8205 || u32Opcode == 0x8208) {
-            int16_t s16PresentLevel = pstParam->status_cb.level_status.present_level;
-            bool    bHasTarget      = pstParam->status_cb.level_status.op_en;
-
-            printf("\n--------------------------------------------------\n");
-            printf("       [BLE MESH GENERIC LEVEL STATUS]            \n");
-            printf("--------------------------------------------------\n");
-            printf("  Event Type      : %s (%d)\n", 
-                   (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_GET_STATE_EVT) ? "GET_RESPONSE" :
-                   (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_SET_STATE_EVT) ? "SET_RESPONSE" : "PUBLISH", eEvent);
-            printf("  Opcode          : 0x%04lX (GENERIC_LEVEL_STATUS)\n", (unsigned long)u32Opcode);
-            printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
-            printf("  Dia chi Dich    : 0x%04X (%s)\n", u16Dst, (u16Dst == 0xFFFF) ? "Broadcast" : "Unicast/Group");
-            printf("  Thong so Song   : RSSI = %d dBm | TTL = %u\n", s8Rssi, u8Ttl);
-            printf("  Key Index       : NetIdx = 0x%04X | AppIdx = 0x%04X\n", u16NetIdx, u16AppIdx);
-            printf("  ----------------------------------------------\n");
-            printf("  Present Level   : %d (0x%04X)\n", s16PresentLevel, (uint16_t)s16PresentLevel);
-
-            if (bHasTarget) {
-                printf("  Target Level    : %d\n", pstParam->status_cb.level_status.target_level);
-                printf("  Remain Time     : %u ms\n", pstParam->status_cb.level_status.remain_time);
-            }
-            printf("--------------------------------------------------\n\n");
-        }
-        /* 2. Xử lý Generic OnOff Status (0x8204) */
-        else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_STATUS || u32Opcode == 0x8204) {
-            uint8_t u8PresentOnOff = pstParam->status_cb.onoff_status.present_onoff;
+    case ESP_BLE_MESH_GENERIC_CLIENT_PUBLISH_EVT:
+    {
+        /* ====================== GENERIC ONOFF STATUS (0x8204) ====================== */
+        if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_STATUS) {
+            uint8_t present   = pstParam->status_cb.onoff_status.present_onoff;
+            bool    has_target = pstParam->status_cb.onoff_status.op_en;
 
             printf("\n--------------------------------------------------\n");
             printf("       [BLE MESH GENERIC ONOFF STATUS]            \n");
             printf("--------------------------------------------------\n");
-            printf("  Opcode          : 0x%04lX (GENERIC_ONOFF_STATUS)\n", (unsigned long)u32Opcode);
+            printf("  Event Type      : %s (%d)\n",
+                   (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_GET_STATE_EVT) ? "GET_RESPONSE" :
+                   (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_SET_STATE_EVT) ? "SET_RESPONSE" : "PUBLISH",
+                   eEvent);
+            printf("  Opcode          : 0x%04lX\n", (unsigned long)u32Opcode);
             printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
-            printf("  Dia chi Dich    : 0x%04X (%s)\n", u16Dst, (u16Dst == 0xFFFF) ? "Broadcast" : "Unicast/Group");
+            printf("  Dia chi Dich    : 0x%04X (%s)\n", u16Dst,
+                   (u16Dst == 0xFFFF) ? "Broadcast" : "Unicast/Group");
             printf("  Thong so Song   : RSSI = %d dBm | TTL = %u\n", s8Rssi, u8Ttl);
             printf("  Key Index       : NetIdx = 0x%04X | AppIdx = 0x%04X\n", u16NetIdx, u16AppIdx);
             printf("  ----------------------------------------------\n");
-            printf("  Present OnOff   : %u (%s)\n", u8PresentOnOff, u8PresentOnOff ? "ON" : "OFF");
+            printf("  Present OnOff   : %u (%s)\n", present, present ? "ON" : "OFF");
+
+            if (has_target) {
+                printf("  Target OnOff    : %u\n", pstParam->status_cb.onoff_status.target_onoff);
+                printf("  Remain Time     : %u\n", pstParam->status_cb.onoff_status.remain_time);
+            }
+            printf("--------------------------------------------------\n\n");
+        }
+        /* ====================== GENERIC LEVEL STATUS (0x8208) ====================== */
+        else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_LEVEL_STATUS) {
+            int16_t present_level = pstParam->status_cb.level_status.present_level;
+            bool    has_target    = pstParam->status_cb.level_status.op_en;
+
+            printf("\n--------------------------------------------------\n");
+            printf("       [BLE MESH GENERIC LEVEL STATUS]            \n");
+            printf("--------------------------------------------------\n");
+            printf("  Event Type      : %s (%d)\n",
+                   (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_GET_STATE_EVT) ? "GET_RESPONSE" :
+                   (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_SET_STATE_EVT) ? "SET_RESPONSE" : "PUBLISH",
+                   eEvent);
+            printf("  Opcode          : 0x%04lX (GENERIC_LEVEL_STATUS)\n", (unsigned long)u32Opcode);
+            printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
+            printf("  Dia chi Dich    : 0x%04X (%s)\n", u16Dst,
+                   (u16Dst == 0xFFFF) ? "Broadcast" : "Unicast/Group");
+            printf("  Thong so Song   : RSSI = %d dBm | TTL = %u\n", s8Rssi, u8Ttl);
+            printf("  Key Index       : NetIdx = 0x%04X | AppIdx = 0x%04X\n", u16NetIdx, u16AppIdx);
+            printf("  ----------------------------------------------\n");
+            printf("  Present Level   : %d (0x%04X)\n", present_level, (uint16_t)present_level);
+
+            if (has_target) {
+                printf("  Target Level    : %d\n", pstParam->status_cb.level_status.target_level);
+                printf("  Remain Time     : %u\n", pstParam->status_cb.level_status.remain_time);
+            }
             printf("--------------------------------------------------\n\n");
         }
         break;
     }
+
+    case ESP_BLE_MESH_GENERIC_CLIENT_TIMEOUT_EVT:
+        LREP_WARNING(TAG, "[GENERIC CLI] Timeout khi gui toi 0x%04X | Opcode=0x%04lX",
+                     u16Src, (unsigned long)u32Opcode);
+        break;
 
     default:
         break;
@@ -1282,3 +1355,173 @@ int32_t app_mesh_SendLightnessSet(uint16_t u16Dst, uint16_t u16Lightness, bool b
     return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
 }
 
+int32_t app_mesh_SendOnOffGet(uint16_t u16Dst)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_generic_client_get_state_t stGet = {0};
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode      = ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_GET,
+        .model       = &g_astRootModels[3],   // OnOff Client
+        .msg_timeout = 3000,
+        .ctx.net_idx = g_stInfo.u16NetIdx,
+        .ctx.app_idx = g_stInfo.u16AppIdx,
+        .ctx.addr    = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_generic_client_get_state(&stCommon, &stGet);
+    if (err == ESP_OK) {
+        LREP(TAG, "[TX ONOFF GET] -> 0x%04X", u16Dst);
+    } else {
+        LREP_ERROR(TAG, "[TX ONOFF GET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+    }
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+int32_t app_mesh_SendOnOffSet(uint16_t u16Dst, uint8_t u8OnOff, bool bAck)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    static uint8_t u8Tid = 0;
+
+    esp_ble_mesh_generic_client_set_state_t stSet = {
+        .onoff_set.onoff = u8OnOff ? 1 : 0,
+        .onoff_set.tid   = u8Tid++,
+        .onoff_set.op_en = false,
+    };
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode      = bAck ? ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_SET
+                            : ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_SET_UNACK,
+        .model       = &g_astRootModels[3],
+        .msg_timeout = 3000,
+        .ctx.net_idx = g_stInfo.u16NetIdx,
+        .ctx.app_idx = g_stInfo.u16AppIdx,
+        .ctx.addr    = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_generic_client_set_state(&stCommon, &stSet);
+    if (err == ESP_OK) {
+        LREP(TAG, "[TX ONOFF SET] -> 0x%04X | OnOff=%u | Ack=%d", u16Dst, u8OnOff, bAck);
+    } else {
+        LREP_ERROR(TAG, "[TX ONOFF SET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+    }
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+
+int32_t app_mesh_SendCtlGet(uint16_t u16Dst)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_light_client_get_state_t stGet;
+    memset(&stGet, 0, sizeof(stGet));
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode      = ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_GET,          // 0x825D
+        .model       = &g_astRootModels[7],                          // CTL Client
+        .msg_timeout = 3000,
+        .ctx.net_idx = g_stInfo.u16NetIdx,
+        .ctx.app_idx = g_stInfo.u16AppIdx,
+        .ctx.addr    = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_light_client_get_state(&stCommon, &stGet);
+    if (err == ESP_OK)
+        LREP(TAG, "[TX CTL GET] -> 0x%04X", u16Dst);
+    else
+        LREP_ERROR(TAG, "[TX CTL GET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+int32_t app_mesh_SendCtlSet(uint16_t u16Dst, uint16_t lightness, uint16_t temperature, int16_t delta_uv, bool bAck)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    static uint8_t u8Tid = 0;
+
+    esp_ble_mesh_light_client_set_state_t stSet;
+    memset(&stSet, 0, sizeof(stSet));
+
+    stSet.ctl_set.ctl_lightness   = lightness;
+    stSet.ctl_set.ctl_temperature = temperature;
+    stSet.ctl_set.ctl_delta_uv    = delta_uv;
+    stSet.ctl_set.tid             = u8Tid++;
+    stSet.ctl_set.op_en           = false;
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode      = bAck ? ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_SET
+                            : ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_SET_UNACK,
+        .model       = &g_astRootModels[7],
+        .msg_timeout = 3000,
+        .ctx.net_idx = g_stInfo.u16NetIdx,
+        .ctx.app_idx = g_stInfo.u16AppIdx,
+        .ctx.addr    = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_light_client_set_state(&stCommon, &stSet);
+    if (err == ESP_OK)
+        LREP(TAG, "[TX CTL SET] -> 0x%04X | L=%u T=%u ΔUV=%d | Ack=%d",
+             u16Dst, lightness, temperature, delta_uv, bAck);
+    else
+        LREP_ERROR(TAG, "[TX CTL SET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+int32_t app_mesh_SendCtlTempGet(uint16_t u16Dst)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_light_client_get_state_t stGet;
+    memset(&stGet, 0, sizeof(stGet));
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode      = ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_GET, // 0x8261
+        .model       = &g_astRootModels[7],
+        .msg_timeout = 3000,
+        .ctx.net_idx = g_stInfo.u16NetIdx,
+        .ctx.app_idx = g_stInfo.u16AppIdx,
+        .ctx.addr    = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_light_client_get_state(&stCommon, &stGet);
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+int32_t app_mesh_SendCtlTempSet(uint16_t u16Dst, uint16_t temperature, int16_t delta_uv, bool bAck)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    static uint8_t u8Tid = 0;
+
+    esp_ble_mesh_light_client_set_state_t stSet;
+    memset(&stSet, 0, sizeof(stSet));
+
+    stSet.ctl_temperature_set.ctl_temperature = temperature;
+    stSet.ctl_temperature_set.ctl_delta_uv    = delta_uv;
+    stSet.ctl_temperature_set.tid             = u8Tid++;
+    stSet.ctl_temperature_set.op_en           = false;
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode      = bAck ? ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_SET
+                            : ESP_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_SET_UNACK,
+        .model       = &g_astRootModels[7],
+        .msg_timeout = 3000,
+        .ctx.net_idx = g_stInfo.u16NetIdx,
+        .ctx.app_idx = g_stInfo.u16AppIdx,
+        .ctx.addr    = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_light_client_set_state(&stCommon, &stSet);
+    if (err == ESP_OK)
+        LREP(TAG, "[TX CTL TEMP SET] -> 0x%04X | T=%u ΔUV=%d", u16Dst, temperature, delta_uv);
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}

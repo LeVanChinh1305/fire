@@ -407,6 +407,47 @@ static int app_console_CmdLightness(int argc, char **argv)
     return 1;
 }
 
+static int app_console_CmdCtl(int argc, char **argv)
+{
+    if (argc < 3) {
+        printf("\nCu phap:\n");
+        printf("  ctl get      <addr_hex>\n");
+        printf("  ctl set      <addr_hex> <lightness> <temp> [delta_uv] [ack]\n");
+        printf("  ctl tempget  <addr_hex>\n");
+        printf("  ctl tempset  <addr_hex> <temp> [delta_uv] [ack]\n");
+        printf("Vi du:\n");
+        printf("  ctl get 0x0043\n");
+        printf("  ctl set 0x0043 30000 4000 0 1\n");
+        printf("  ctl tempset 0x0044 3500 0 1\n\n");
+        return 1;
+    }
+
+    uint16_t addr = (uint16_t)strtoul(argv[2], NULL, 0);
+
+    if (strcmp(argv[1], "get") == 0) {
+        return (app_mesh_SendCtlGet(addr) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        if (argc < 5) return 1;
+        uint16_t light = (uint16_t)atoi(argv[3]);
+        uint16_t temp  = (uint16_t)atoi(argv[4]);
+        int16_t  duv   = (argc >= 6) ? (int16_t)atoi(argv[5]) : 0;
+        bool     bAck  = (argc >= 7) ? (atoi(argv[6]) != 0) : true;
+        return (app_mesh_SendCtlSet(addr, light, temp, duv, bAck) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "tempget") == 0) {
+        return (app_mesh_SendCtlTempGet(addr) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "tempset") == 0) {
+        if (argc < 4) return 1;
+        uint16_t temp = (uint16_t)atoi(argv[3]);
+        int16_t  duv  = (argc >= 5) ? (int16_t)atoi(argv[4]) : 0;
+        bool     bAck = (argc >= 6) ? (atoi(argv[5]) != 0) : true;
+        return (app_mesh_SendCtlTempSet(addr, temp, duv, bAck) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    return 1;
+}
+
 /* ================== ĐĂNG KÝ DANH SÁCH LỆNH ================== */
 
 static void app_console_RegisterCommands(void)
@@ -542,6 +583,14 @@ static void app_console_RegisterCommands(void)
         .func    = &app_console_CmdLightness,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdLightness));
+
+    const esp_console_cmd_t stCmdCtl = {
+        .command = "ctl",
+        .help    = "Light CTL Client: ctl <get|set|tempget|tempset> ...",
+        .hint    = NULL,
+        .func    = &app_console_CmdCtl,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdCtl));
 
 }
 
