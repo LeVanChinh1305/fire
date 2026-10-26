@@ -139,9 +139,12 @@ static uint32_t              g_u32ScannedCount  = 0;
 static SemaphoreHandle_t     g_hScanMutex       = NULL;
 static TaskHandle_t          g_hScanPrintTask   = NULL;
 
+
 static void app_mesh_ScannerTask(void *pvParameters);
 static int32_t app_mesh_GatewayJoinNetwork(uint16_t u16NetIdx);
 static int32_t app_mesh_SubscribeGroup(uint16_t u16GroupAddr, bool bPersist);
+static uint32_t app_mesh_DecodeTransTime(uint8_t u8Raw);
+static uint8_t  app_mesh_EncodeTransTime(uint32_t u32Ms);
 
 static uint8_t g_au8DevUuid[16] = { 0x32, 0x10 };
 
@@ -174,12 +177,15 @@ static esp_ble_mesh_gen_onoff_srv_t g_stOnoffSrv = {
     .rsp_ctrl.set_auto_rsp = ESP_BLE_MESH_SERVER_AUTO_RSP,
 };
 
+#define IDX_MODEL_DEF_TT_CLI   8
+
 static esp_ble_mesh_client_t g_stCfgCli;
 static esp_ble_mesh_client_t g_stOnoffCli;
 static esp_ble_mesh_client_t g_stHealthCli;
 static esp_ble_mesh_client_t g_stLevelCli;
 static esp_ble_mesh_client_t g_stLightnessCli;
 static esp_ble_mesh_client_t g_stCtlCli;
+static esp_ble_mesh_client_t g_stDefTtCli;
 
 static esp_ble_mesh_model_t g_astRootModels[] = {
     ESP_BLE_MESH_MODEL_CFG_SRV(&g_stCfgSrv),
@@ -190,6 +196,7 @@ static esp_ble_mesh_model_t g_astRootModels[] = {
     ESP_BLE_MESH_MODEL_GEN_LEVEL_CLI(&g_stOnoffPub, &g_stLevelCli),
     ESP_BLE_MESH_MODEL_LIGHT_LIGHTNESS_CLI(&g_stOnoffPub, &g_stLightnessCli),
     ESP_BLE_MESH_MODEL_LIGHT_CTL_CLI(&g_stOnoffPub, &g_stCtlCli),
+    ESP_BLE_MESH_MODEL_GEN_DEF_TRANS_TIME_CLI(&g_stOnoffPub, &g_stDefTtCli),
 };
 
 ESP_BLE_MESH_MODEL_PUB_DEFINE(g_stVndSrvPub, 3 + sizeof(st_vendor_custom_data_t), ROLE_NODE);
@@ -267,8 +274,7 @@ static void app_mesh_HealthCliCb(esp_ble_mesh_health_client_cb_event_t eEvent,
     case ESP_BLE_MESH_HEALTH_CLIENT_SET_STATE_EVT:
     case ESP_BLE_MESH_HEALTH_CLIENT_PUBLISH_EVT: {
         uint32_t op = pstParam->params ? pstParam->params->opcode : 0;
-        LREP(TAG, "[HEALTH RX] 0x%04X -> 0x%04X | op=0x%04lX | err=%d",
-             u16Src, u16Dst, (unsigned long)op, pstParam->error_code);
+        // LREP(TAG, "[HEALTH RX] 0x%04X -> 0x%04X | op=0x%04lX | err=%d", u16Src, u16Dst, (unsigned long)op, pstParam->error_code);
 
         if (pstParam->error_code != ESP_OK) break;
 
@@ -278,20 +284,20 @@ static void app_mesh_HealthCliCb(esp_ble_mesh_health_client_cb_event_t eEvent,
             uint16_t company  = pstParam->status_cb.fault_status.company_id;
             struct net_buf_simple *pFaults = pstParam->status_cb.fault_status.fault_array;
 
-            printf("\n[HEALTH] Fault Status tu 0x%04X\n", u16Src);
-            printf("  Test ID     : 0x%02X\n", test_id);
-            printf("  Company ID  : 0x%04X\n", company);
+            // printf("\n[HEALTH] Fault Status tu 0x%04X\n", u16Src);
+            // printf("  Test ID     : 0x%02X\n", test_id);
+            // printf("  Company ID  : 0x%04X\n", company);
 
             if (pFaults && pFaults->len > 0) {
                 printf("  So loi      : %u\n  Ma loi      :", (unsigned)pFaults->len);
                 for (uint16_t i = 0; i < pFaults->len; i++) {
                     printf(" 0x%02X", pFaults->data[i]);
                 }
-                printf("\n");
+                // printf("\n");
             } else {
-                printf("  (Khong co loi)\n");
+                //printf("  (Khong co loi)\n");
             }
-            printf("\n");
+            // printf("\n");
         } else if (op == ESP_BLE_MESH_MODEL_OP_ATTENTION_STATUS) {
             printf("\n[HEALTH] Attention Status tu 0x%04X: %u giay\n\n",
                    u16Src, pstParam->status_cb.attention_status.attention);
@@ -613,6 +619,24 @@ static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent,
                 printf("  Remain Time     : %u\n", pstParam->status_cb.level_status.remain_time);
             }
             printf("--------------------------------------------------\n\n");
+        }else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_STATUS) {
+            uint8_t u8Raw = pstParam->status_cb.def_trans_time_status.trans_time;
+            uint32_t u32Ms = app_mesh_DecodeTransTime(u8Raw);
+
+            printf("\n--------------------------------------------------\n");
+            printf("  [BLE MESH DEFAULT TRANSITION TIME STATUS]\n");
+            printf("--------------------------------------------------\n");
+            printf("  Event Type      : %s\n",
+                (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_GET_STATE_EVT) ? "GET_RESPONSE" :
+                (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_SET_STATE_EVT) ? "SET_RESPONSE" : "PUBLISH");
+            printf("  Opcode          : 0x%04lX\n", (unsigned long)u32Opcode);
+            printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
+            printf("  Dia chi Dich    : 0x%04X\n", u16Dst);
+            printf("  RSSI / TTL      : %d dBm / %u\n", s8Rssi, u8Ttl);
+            printf("  Raw             : 0x%02X (steps=%u, res=%u)\n",
+                u8Raw, u8Raw & 0x3F, u8Raw >> 6);
+            printf("  Thoi gian       : %lu ms\n", (unsigned long)u32Ms);
+            printf("--------------------------------------------------\n\n");
         }
         break;
     }
@@ -668,27 +692,80 @@ static void app_mesh_PrintFullMsg(const esp_ble_mesh_msg_ctx_t *pstCtx, uint32_t
          (unsigned)(u16OpLen + u16ParamLen), acHex, (u16ParamLen > u16Copy) ? " ..." : "");
 }
 
-static void app_mesh_VendorServerCb(esp_ble_mesh_model_cb_event_t eEvent, esp_ble_mesh_model_cb_param_t *pstParam)
+static void app_mesh_VendorServerCb(esp_ble_mesh_model_cb_event_t event,
+                                    esp_ble_mesh_model_cb_param_t *param)
 {
-    if (!pstParam) return;
+    if (event != ESP_BLE_MESH_MODEL_OPERATION_EVT) {
+        return;
+    }
 
-    if (eEvent == ESP_BLE_MESH_MODEL_OPERATION_EVT) {
-        uint32_t u32Opcode = pstParam->model_operation.opcode;
-        uint16_t u16Src    = pstParam->model_operation.ctx->addr;
-        uint16_t u16Dst    = pstParam->model_operation.ctx->recv_dst;
-        uint16_t u16Length = pstParam->model_operation.length;
-        uint8_t *pu8Msg    = pstParam->model_operation.msg;
+    if (param == NULL || param->model_operation.model == NULL ||
+        param->model_operation.ctx == NULL) {
+        return;
+    }
 
-        app_mesh_PrintFullMsg(pstParam->model_operation.ctx, u32Opcode, pu8Msg, u16Length);
-        app_mesh_AppendLog(u16Src, u16Dst, (uint8_t)u32Opcode, 0,
-                           pstParam->model_operation.ctx->recv_ttl, pstParam->model_operation.ctx->recv_rssi);
+    /* Chỉ xử lý Vendor Model của mình (Company ID 0x8888) */
+    if (param->model_operation.model->vnd.company_id != DF_MESH_VND_COMPANY_ID) {
+        return;
+    }
 
-        APP_LOCK_GUARD(stGuard, g_hMeshMutex, MESH_INFO_MUTEX_NAME, DF_LOCK_TIMEOUT_MS);
-        if (stGuard.bLocked) {
-            g_stInfo.u16LastSrc = u16Src;
-            g_stInfo.u16LastDst = u16Dst;
-            g_stInfo.u32RxCount++;
+    uint32_t opcode = param->model_operation.opcode;
+    uint16_t length = param->model_operation.length;
+    uint8_t *data   = param->model_operation.msg;
+
+    /* ctx là con trỏ → phải dùng -> */
+    uint16_t src  = param->model_operation.ctx->addr;
+    uint16_t dst  = param->model_operation.ctx->recv_dst;
+    uint8_t  ttl  = param->model_operation.ctx->recv_ttl;
+    int8_t   rssi = param->model_operation.ctx->recv_rssi;
+
+    uint8_t op_idx = (uint8_t)((opcode >> 16) & 0x3F);
+
+    /* ========== IN TOÀN BỘ BẢN TIN VENDOR ========== */
+    printf("\n========== [VENDOR RX] ==========\n");
+    printf("  Time (us)   : %lld\n", (long long)esp_timer_get_time());
+    printf("  Src         : 0x%04X\n", src);
+    printf("  Dst         : 0x%04X %s\n", dst,
+           (dst == 0xFFFF) ? "(All-nodes)" :
+           (dst >= 0xC000 && dst <= 0xFEFF) ? "(Group)" : "(Unicast)");
+    printf("  Opcode      : 0x%06lX  (OpIdx = 0x%02X)\n",
+           (unsigned long)opcode, op_idx);
+    printf("  TTL / RSSI  : %u / %d dBm\n", ttl, rssi);
+    printf("  Length      : %u byte\n", length);
+
+    if (length > 0 && data != NULL) {
+        printf("  Payload HEX : ");
+        for (uint16_t i = 0; i < length; i++) {
+            printf("%02X ", data[i]);
         }
+        printf("\n");
+
+        printf("  Payload DEC : ");
+        for (uint16_t i = 0; i < length; i++) {
+            printf("%u ", data[i]);
+        }
+        printf("\n");
+    } else {
+        printf("  Payload     : (empty)\n");
+    }
+    printf("=================================\n\n");
+
+    /* Xử lý riêng opcode 0x11 (báo cháy) */
+    switch (op_idx) {
+    case 0x11:
+        if (length >= 2) {
+            uint8_t type   = data[0];
+            uint8_t status = data[1];
+            const char *status_str = "Unknown";
+            if (status == 0x01) status_str = "BINH THUONG";
+            else if (status == 0x02) status_str = "CO KHOI / BAO DONG";
+            else if (status == 0x03) status_str = "HET KHOI";
+            LREP(TAG, "[VENDOR 0x11] type=0x%02X status=0x%02X (%s)", type, status, status_str);
+        }
+        break;
+    default:
+        LREP(TAG, "[VND UNKNOWN] op_idx=0x%02X len=%u src=0x%04X", op_idx, length, src);
+        break;
     }
 }
 
@@ -737,6 +814,8 @@ static void app_mesh_StartModelBindings(void)
         { .pstModel = &g_astRootModels[4], .u16CompanyId = ESP_BLE_MESH_CID_NVAL, .u16ModelId = ESP_BLE_MESH_MODEL_ID_HEALTH_CLI },  
         { .pstModel = &g_astRootModels[5], .u16CompanyId = ESP_BLE_MESH_CID_NVAL, .u16ModelId = ESP_BLE_MESH_MODEL_ID_GEN_LEVEL_CLI },
         { .pstModel = &g_astRootModels[6], .u16CompanyId = ESP_BLE_MESH_CID_NVAL, .u16ModelId = ESP_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI },
+        { .pstModel = &g_astRootModels[7], .u16CompanyId = ESP_BLE_MESH_CID_NVAL,.u16ModelId = ESP_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI },
+        { .pstModel = &g_astRootModels[IDX_MODEL_DEF_TT_CLI], .u16CompanyId = ESP_BLE_MESH_CID_NVAL,.u16ModelId = ESP_BLE_MESH_MODEL_ID_GEN_DEF_TRANS_TIME_CLI },
         { .pstModel = &g_astVndModelsServer[0], .u16CompanyId = DF_MESH_VND_COMPANY_ID, .u16ModelId = DF_MESH_VND_MODEL_ID_SERVER },
     };
 
@@ -1523,5 +1602,74 @@ int32_t app_mesh_SendCtlTempSet(uint16_t u16Dst, uint16_t temperature, int16_t d
     esp_err_t err = esp_ble_mesh_light_client_set_state(&stCommon, &stSet);
     if (err == ESP_OK)
         LREP(TAG, "[TX CTL TEMP SET] -> 0x%04X | T=%u ΔUV=%d", u16Dst, temperature, delta_uv);
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+static const uint32_t g_au32TtStepMs[4] = { 100, 1000, 10000, 600000 };
+
+static uint32_t app_mesh_DecodeTransTime(uint8_t u8Raw)
+{
+    return (uint32_t)(u8Raw & 0x3F) * g_au32TtStepMs[u8Raw >> 6];
+}
+
+static uint8_t app_mesh_EncodeTransTime(uint32_t u32Ms)
+{
+    for (uint8_t res = 0; res < 3; res++) {
+        if (u32Ms <= 62UL * g_au32TtStepMs[res]) {
+            return (uint8_t)((res << 6) | (u32Ms / g_au32TtStepMs[res]));
+        }
+    }
+    uint32_t steps = u32Ms / g_au32TtStepMs[3];
+    return (uint8_t)((3 << 6) | (steps > 62 ? 62 : steps));
+}
+
+int32_t app_mesh_SendDefTransTimeGet(uint16_t u16Dst)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_generic_client_get_state_t stGet;
+    memset(&stGet, 0, sizeof(stGet));
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode       = ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_GET,
+        .model        = &g_astRootModels[IDX_MODEL_DEF_TT_CLI],
+        .msg_timeout  = 3000,
+        .ctx.net_idx  = g_stInfo.u16NetIdx,
+        .ctx.app_idx  = g_stInfo.u16AppIdx,
+        .ctx.addr     = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_generic_client_get_state(&stCommon, &stGet);
+    if (err == ESP_OK) LREP(TAG, "[TX DEF_TT GET] -> 0x%04X", u16Dst);
+    else LREP_ERROR(TAG, "[TX DEF_TT GET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+int32_t app_mesh_SendDefTransTimeSet(uint16_t u16Dst, uint32_t u32Ms, bool bAck)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_generic_client_set_state_t stSet;
+    memset(&stSet, 0, sizeof(stSet));
+    stSet.def_trans_time_set.trans_time = app_mesh_EncodeTransTime(u32Ms);
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode       = bAck ? ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_SET
+                             : ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_SET_UNACK,
+        .model        = &g_astRootModels[IDX_MODEL_DEF_TT_CLI],
+        .msg_timeout  = 3000,
+        .ctx.net_idx  = g_stInfo.u16NetIdx,
+        .ctx.app_idx  = g_stInfo.u16AppIdx,
+        .ctx.addr     = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_generic_client_set_state(&stCommon, &stSet);
+    if (err == ESP_OK)
+        LREP(TAG, "[TX DEF_TT SET] -> 0x%04X | %lu ms (raw 0x%02X)",
+             u16Dst, (unsigned long)u32Ms, stSet.def_trans_time_set.trans_time);
+    else
+        LREP_ERROR(TAG, "[TX DEF_TT SET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
     return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
 }

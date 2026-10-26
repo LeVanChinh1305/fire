@@ -109,3 +109,6 @@ int32_t app_mesh_SendCtlGet(uint16_t u16Dst);
 int32_t app_mesh_SendCtlSet(uint16_t u16Dst, uint16_t lightness, uint16_t temperature, int16_t delta_uv, bool bAck);
 int32_t app_mesh_SendCtlTempGet(uint16_t u16Dst);
 int32_t app_mesh_SendCtlTempSet(uint16_t u16Dst, uint16_t temperature, int16_t delta_uv, bool bAck);
+
+int32_t app_mesh_SendDefTransTimeGet(uint16_t u16Dst);
+int32_t app_mesh_SendDefTransTimeSet(uint16_t u16Dst, uint32_t u32Ms, bool bAck);

@@ -448,6 +448,29 @@ static int app_console_CmdCtl(int argc, char **argv)
     return 1;
 }
 
+
+static int app_console_CmdDefTt(int argc, char **argv)
+{
+    if (argc < 3) {
+        printf("\nCu phap: dtt <get|set> <addr_hex> [ms] [ack=0|1]\n");
+        printf("Vi du  : dtt get 0x0043\n");
+        printf("         dtt set 0x0043 2000 1\n\n");
+        return 1;
+    }
+    uint16_t addr = (uint16_t)strtoul(argv[2], NULL, 0);
+
+    if (strcmp(argv[1], "get") == 0) {
+        return (app_mesh_SendDefTransTimeGet(addr) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        if (argc < 4) return 1;
+        uint32_t ms = (uint32_t)strtoul(argv[3], NULL, 0);
+        bool bAck = (argc >= 5) ? (atoi(argv[4]) != 0) : true;
+        return (app_mesh_SendDefTransTimeSet(addr, ms, bAck) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    return 1;
+}
+
 /* ================== ĐĂNG KÝ DANH SÁCH LỆNH ================== */
 
 static void app_console_RegisterCommands(void)
@@ -591,6 +614,14 @@ static void app_console_RegisterCommands(void)
         .func    = &app_console_CmdCtl,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdCtl));
+
+    const esp_console_cmd_t stCmdDtt = {
+        .command = "dtt",
+        .help    = "Default Transition Time: dtt <get|set> <addr_hex> [ms] [ack]",
+        .hint    = NULL,
+        .func    = &app_console_CmdDefTt,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdDtt));
 
 }
 
