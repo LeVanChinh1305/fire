@@ -471,6 +471,29 @@ static int app_console_CmdDefTt(int argc, char **argv)
     return 1;
 }
 
+static int app_console_CmdPwr(int argc, char **argv)
+{
+    if (argc < 3) {
+        printf("\nCu phap: pwr <get|set> <addr_hex> [0|1|2] [ack=0|1]\n");
+        printf("  0 = OFF, 1 = DEFAULT, 2 = RESTORE\n");
+        printf("Vi du  : pwr get 0x0065\n");
+        printf("         pwr set 0x0065 2 1\n\n");
+        return 1;
+    }
+    uint16_t addr = (uint16_t)strtoul(argv[2], NULL, 0);
+
+    if (strcmp(argv[1], "get") == 0) {
+        return (app_mesh_SendPowerOnoffGet(addr) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    if (strcmp(argv[1], "set") == 0) {
+        if (argc < 4) return 1;
+        uint8_t val = (uint8_t)strtoul(argv[3], NULL, 0);
+        bool bAck = (argc >= 5) ? (atoi(argv[4]) != 0) : true;
+        return (app_mesh_SendPowerOnoffSet(addr, val, bAck) == ERROR_CODE_OK) ? 0 : 1;
+    }
+    return 1;
+}
+
 /* ================== ĐĂNG KÝ DANH SÁCH LỆNH ================== */
 
 static void app_console_RegisterCommands(void)
@@ -622,6 +645,14 @@ static void app_console_RegisterCommands(void)
         .func    = &app_console_CmdDefTt,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdDtt));
+
+    const esp_console_cmd_t stCmdPwr = {
+        .command = "pwr",
+        .help    = "Generic Power OnOff: pwr <get|set> <addr_hex> [0|1|2] [ack]",
+        .hint    = NULL,
+        .func    = &app_console_CmdPwr,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&stCmdPwr));
 
 }
 

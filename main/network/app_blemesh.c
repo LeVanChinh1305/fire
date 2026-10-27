@@ -121,6 +121,7 @@ static uint16_t g_u16ProvisionedNetIdx = DF_MESH_HOMI_NET_KEY_IDX;
 
 #define DF_MAX_SCANNED_DEVICES 32
 
+
 typedef struct {
     uint8_t  au8Mac[6];
     uint8_t  u8AddrType;
@@ -178,6 +179,8 @@ static esp_ble_mesh_gen_onoff_srv_t g_stOnoffSrv = {
 };
 
 #define IDX_MODEL_DEF_TT_CLI   8
+#define IDX_MODEL_POWER_ONOFF_CLI   9
+
 
 static esp_ble_mesh_client_t g_stCfgCli;
 static esp_ble_mesh_client_t g_stOnoffCli;
@@ -186,6 +189,8 @@ static esp_ble_mesh_client_t g_stLevelCli;
 static esp_ble_mesh_client_t g_stLightnessCli;
 static esp_ble_mesh_client_t g_stCtlCli;
 static esp_ble_mesh_client_t g_stDefTtCli;
+static esp_ble_mesh_client_t g_stPowerOnoffCli;
+
 
 static esp_ble_mesh_model_t g_astRootModels[] = {
     ESP_BLE_MESH_MODEL_CFG_SRV(&g_stCfgSrv),
@@ -197,6 +202,7 @@ static esp_ble_mesh_model_t g_astRootModels[] = {
     ESP_BLE_MESH_MODEL_LIGHT_LIGHTNESS_CLI(&g_stOnoffPub, &g_stLightnessCli),
     ESP_BLE_MESH_MODEL_LIGHT_CTL_CLI(&g_stOnoffPub, &g_stCtlCli),
     ESP_BLE_MESH_MODEL_GEN_DEF_TRANS_TIME_CLI(&g_stOnoffPub, &g_stDefTtCli),
+    ESP_BLE_MESH_MODEL_GEN_POWER_ONOFF_CLI(&g_stOnoffPub, &g_stPowerOnoffCli),
 };
 
 ESP_BLE_MESH_MODEL_PUB_DEFINE(g_stVndSrvPub, 3 + sizeof(st_vendor_custom_data_t), ROLE_NODE);
@@ -274,34 +280,39 @@ static void app_mesh_HealthCliCb(esp_ble_mesh_health_client_cb_event_t eEvent,
     case ESP_BLE_MESH_HEALTH_CLIENT_SET_STATE_EVT:
     case ESP_BLE_MESH_HEALTH_CLIENT_PUBLISH_EVT: {
         uint32_t op = pstParam->params ? pstParam->params->opcode : 0;
-        // LREP(TAG, "[HEALTH RX] 0x%04X -> 0x%04X | op=0x%04lX | err=%d", u16Src, u16Dst, (unsigned long)op, pstParam->error_code);
+         LREP(TAG, "[HEALTH RX] 0x%04X -> 0x%04X | op=0x%04lX | err=%d", u16Src, u16Dst, (unsigned long)op, pstParam->error_code);
 
         if (pstParam->error_code != ESP_OK) break;
 
         if (op == ESP_BLE_MESH_MODEL_OP_HEALTH_FAULT_STATUS ||
-            op == ESP_BLE_MESH_MODEL_OP_HEALTH_CURRENT_STATUS) {
+            op == ESP_BLE_MESH_MODEL_OP_HEALTH_CURRENT_STATUS ||
+            op == ESP_BLE_MESH_MODEL_OP_HEALTH_FAULT_GET) {
             uint8_t  test_id  = pstParam->status_cb.fault_status.test_id;
             uint16_t company  = pstParam->status_cb.fault_status.company_id;
             struct net_buf_simple *pFaults = pstParam->status_cb.fault_status.fault_array;
 
-            // printf("\n[HEALTH] Fault Status tu 0x%04X\n", u16Src);
-            // printf("  Test ID     : 0x%02X\n", test_id);
-            // printf("  Company ID  : 0x%04X\n", company);
+            printf("\n[HEALTH] Fault Status tu 0x%04X\n", u16Src);
+            printf("  Test ID     : 0x%02X\n", test_id);
+            printf("  Company ID  : 0x%04X\n", company);
 
             if (pFaults && pFaults->len > 0) {
                 printf("  So loi      : %u\n  Ma loi      :", (unsigned)pFaults->len);
                 for (uint16_t i = 0; i < pFaults->len; i++) {
                     printf(" 0x%02X", pFaults->data[i]);
                 }
-                // printf("\n");
+                printf("\n");
             } else {
-                //printf("  (Khong co loi)\n");
+                printf("  (Khong co loi)\n");
             }
-            // printf("\n");
-        } else if (op == ESP_BLE_MESH_MODEL_OP_ATTENTION_STATUS) {
+            printf("\n");
+        } else if (op == ESP_BLE_MESH_MODEL_OP_ATTENTION_STATUS ||
+                    op == ESP_BLE_MESH_MODEL_OP_ATTENTION_GET ||
+                    op == ESP_BLE_MESH_MODEL_OP_ATTENTION_SET) {
             printf("\n[HEALTH] Attention Status tu 0x%04X: %u giay\n\n",
                    u16Src, pstParam->status_cb.attention_status.attention);
-        } else if (op == ESP_BLE_MESH_MODEL_OP_HEALTH_PERIOD_STATUS) {
+        } else if (op == ESP_BLE_MESH_MODEL_OP_HEALTH_PERIOD_STATUS ||
+                    op == ESP_BLE_MESH_MODEL_OP_HEALTH_PERIOD_GET ||
+                    op == ESP_BLE_MESH_MODEL_OP_HEALTH_PERIOD_SET) {
             printf("\n[HEALTH] Period Status tu 0x%04X: divider=%u\n\n",
                    u16Src, pstParam->status_cb.period_status.fast_period_divisor);
         }
@@ -619,7 +630,9 @@ static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent,
                 printf("  Remain Time     : %u\n", pstParam->status_cb.level_status.remain_time);
             }
             printf("--------------------------------------------------\n\n");
-        }else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_STATUS) {
+        }else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_STATUS||
+            u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_GET ||
+            u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_SET) {
             uint8_t u8Raw = pstParam->status_cb.def_trans_time_status.trans_time;
             uint32_t u32Ms = app_mesh_DecodeTransTime(u8Raw);
 
@@ -636,6 +649,23 @@ static void app_mesh_GenericCliCb(esp_ble_mesh_generic_client_cb_event_t eEvent,
             printf("  Raw             : 0x%02X (steps=%u, res=%u)\n",
                 u8Raw, u8Raw & 0x3F, u8Raw >> 6);
             printf("  Thoi gian       : %lu ms\n", (unsigned long)u32Ms);
+            printf("--------------------------------------------------\n\n");
+        }else if (u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_STATUS ||
+                u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_GET ||
+                u32Opcode == ESP_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_SET) {
+            uint8_t u8Val = pstParam->status_cb.onpowerup_status.onpowerup;
+            const char *pcStr = (u8Val == 0) ? "OFF" : (u8Val == 1) ? "DEFAULT" : (u8Val == 2) ? "RESTORE" : "RESERVED";
+
+            printf("\n--------------------------------------------------\n");
+            printf("  [BLE MESH GENERIC ONPOWERUP STATUS]\n");
+            printf("--------------------------------------------------\n");
+            printf("  Event Type      : %s\n",
+                (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_GET_STATE_EVT) ? "GET_RESPONSE" :
+                (eEvent == ESP_BLE_MESH_GENERIC_CLIENT_SET_STATE_EVT) ? "SET_RESPONSE" : "PUBLISH");
+            printf("  Opcode          : 0x%04lX\n", (unsigned long)u32Opcode);
+            printf("  Dia chi Nguon   : 0x%04X\n", u16Src);
+            printf("  RSSI / TTL      : %d dBm / %u\n", s8Rssi, u8Ttl);
+            printf("  OnPowerUp       : %u (%s)\n", u8Val, pcStr);
             printf("--------------------------------------------------\n\n");
         }
         break;
@@ -816,6 +846,7 @@ static void app_mesh_StartModelBindings(void)
         { .pstModel = &g_astRootModels[6], .u16CompanyId = ESP_BLE_MESH_CID_NVAL, .u16ModelId = ESP_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI },
         { .pstModel = &g_astRootModels[7], .u16CompanyId = ESP_BLE_MESH_CID_NVAL,.u16ModelId = ESP_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI },
         { .pstModel = &g_astRootModels[IDX_MODEL_DEF_TT_CLI], .u16CompanyId = ESP_BLE_MESH_CID_NVAL,.u16ModelId = ESP_BLE_MESH_MODEL_ID_GEN_DEF_TRANS_TIME_CLI },
+        { .pstModel = &g_astRootModels[IDX_MODEL_POWER_ONOFF_CLI], .u16CompanyId = ESP_BLE_MESH_CID_NVAL,.u16ModelId = ESP_BLE_MESH_MODEL_ID_GEN_POWER_ONOFF_CLI },
         { .pstModel = &g_astVndModelsServer[0], .u16CompanyId = DF_MESH_VND_COMPANY_ID, .u16ModelId = DF_MESH_VND_MODEL_ID_SERVER },
     };
 
@@ -1671,5 +1702,55 @@ int32_t app_mesh_SendDefTransTimeSet(uint16_t u16Dst, uint32_t u32Ms, bool bAck)
              u16Dst, (unsigned long)u32Ms, stSet.def_trans_time_set.trans_time);
     else
         LREP_ERROR(TAG, "[TX DEF_TT SET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+int32_t app_mesh_SendPowerOnoffGet(uint16_t u16Dst)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_generic_client_get_state_t stGet;
+    memset(&stGet, 0, sizeof(stGet));
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode       = ESP_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_GET,
+        .model        = &g_astRootModels[IDX_MODEL_POWER_ONOFF_CLI],
+        .msg_timeout  = 3000,
+        .ctx.net_idx  = g_stInfo.u16NetIdx,
+        .ctx.app_idx  = g_stInfo.u16AppIdx,
+        .ctx.addr     = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_generic_client_get_state(&stCommon, &stGet);
+    if (err == ESP_OK) LREP(TAG, "[TX PWR GET] -> 0x%04X", u16Dst);
+    else LREP_ERROR(TAG, "[TX PWR GET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
+    return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
+}
+
+/* u8OnPowerUp: 0 = OFF, 1 = DEFAULT, 2 = RESTORE */
+int32_t app_mesh_SendPowerOnoffSet(uint16_t u16Dst, uint8_t u8OnPowerUp, bool bAck)
+{
+    if (!g_bMeshInitialized) return ERROR_CODE_FAIL;
+    if (u8OnPowerUp > 2) return ERROR_CODE_FAIL;
+
+    esp_ble_mesh_generic_client_set_state_t stSet;
+    memset(&stSet, 0, sizeof(stSet));
+    stSet.power_set.onpowerup = u8OnPowerUp;
+
+    esp_ble_mesh_client_common_param_t stCommon = {
+        .opcode       = bAck ? ESP_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_SET
+                             : ESP_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_SET_UNACK,
+        .model        = &g_astRootModels[IDX_MODEL_POWER_ONOFF_CLI],
+        .msg_timeout  = 3000,
+        .ctx.net_idx  = g_stInfo.u16NetIdx,
+        .ctx.app_idx  = g_stInfo.u16AppIdx,
+        .ctx.addr     = u16Dst,
+        .ctx.send_ttl = 7,
+    };
+
+    esp_err_t err = esp_ble_mesh_generic_client_set_state(&stCommon, &stSet);
+    if (err == ESP_OK) LREP(TAG, "[TX PWR SET] -> 0x%04X | OnPowerUp=%u", u16Dst, u8OnPowerUp);
+    else LREP_ERROR(TAG, "[TX PWR SET FAILED] -> 0x%04X | err=0x%x", u16Dst, err);
     return (err == ESP_OK) ? ERROR_CODE_OK : ERROR_CODE_FAIL;
 }

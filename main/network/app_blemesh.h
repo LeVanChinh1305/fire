@@ -112,3 +112,6 @@ int32_t app_mesh_SendCtlTempSet(uint16_t u16Dst, uint16_t temperature, int16_t d
 
 int32_t app_mesh_SendDefTransTimeGet(uint16_t u16Dst);
 int32_t app_mesh_SendDefTransTimeSet(uint16_t u16Dst, uint32_t u32Ms, bool bAck);
+
+int32_t app_mesh_SendPowerOnoffGet(uint16_t u16Dst);
+int32_t app_mesh_SendPowerOnoffSet(uint16_t u16Dst, uint8_t u8OnPowerUp, bool bAck);
